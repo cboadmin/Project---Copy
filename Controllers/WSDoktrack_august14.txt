@@ -1,0 +1,670 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Data.SqlClient;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.WebSockets;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Web;
+using System.Web.Http;
+using System.Web.WebSockets;
+using System.IO;
+using System.Web.Mvc;
+using System.Text.RegularExpressions;
+using System.Diagnostics;
+using System.Data;
+using System.ComponentModel.DataAnnotations;
+using System.Globalization;
+
+namespace WSDokTrack.Controllers
+{
+	//test1234
+
+	#region code proper
+	public class WSController : ApiController
+	{
+		public HttpResponseMessage Get(string key)
+		{
+			int threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+			if (HttpContext.Current.IsWebSocketRequest)
+			{
+				Handler handler = new Handler();
+				handler.Name = "pluto";
+				HttpContext.Current.AcceptWebSocketRequest(handler.ProcessWS);
+				HttpContext.Current.Items.Add("Handler", handler);
+			}
+
+			return new HttpResponseMessage(HttpStatusCode.SwitchingProtocols);
+		}
+
+		private async Task ProcessWS(AspNetWebSocketContext context)
+		{
+			WebSocket socket = context.WebSocket;
+
+			Singleton st = Singleton.Instance;
+			BL bl = new BL();
+
+			Singleton.Socket SC = new Singleton.Socket();
+
+			string ip = System.Web.HttpContext.Current.Request.ServerVariables["HTTP_X_FORWARDED_FOR"];
+			int port = System.Convert.ToInt32(System.Web.HttpContext.Current.Request.ServerVariables["REMOTE_PORT"]);
+			if (string.IsNullOrEmpty(ip)) { ip = System.Web.HttpContext.Current.Request.ServerVariables["REMOTE_ADDR"]; }
+
+			SC.IP = ip;
+			SC.Port = port;
+			SC.ws = socket;
+			st.RunTimer();
+
+			GC.Collect();
+			GC.GetTotalMemory(true);
+
+
+			while (true)
+			{
+				ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
+				WebSocketReceiveResult result = await socket.ReceiveAsync(buffer, CancellationToken.None);
+
+				if (socket.State == WebSocketState.Open)
+				{
+
+					string userMessage = Encoding.UTF8.GetString(buffer.Array, 0, result.Count);
+
+					if (SC.timeronrun == false)
+					{
+						SC.UserName = userMessage;
+						SC.timeronrun = true;
+						Singleton sg = Singleton.Instance;
+						sg.AddSocket(SC);
+						userMessage = DateTime.Now.ToLongTimeString();
+						buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(userMessage));
+						await socket.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+					}
+					else
+					{
+						List<Dirusme> msgList = bl.ProcMsg(userMessage);
+						foreach (Dirusme d in msgList)
+						{
+							switch (d.Direction)
+							{
+								case eDirection.Echo:
+									if (d.Message != "")
+									{
+										Debug.Print(SC.UserName + ":" + userMessage + ":" + d.Message);
+										buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(d.Message));
+										await socket.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+									}
+									else
+									{
+										Debug.Print(SC.UserName + ":" + userMessage + ":Empty");
+									}
+									break;
+								case eDirection.TargetedPing:
+									st.SendTargetedPing(d.Message, d.User);
+									break;
+								case eDirection.SendToAll:
+									st.SendToAll(d.Message);
+									break;
+								case eDirection.SendToallExceptUser:
+									st.SendToAllExceptUser(d.Message, d.User);
+									break;
+							}
+
+						}
+
+
+
+					}
+
+
+				}
+				else
+				{
+					Debug.Print("Close");
+
+					st.removeSocket(socket);
+					socket.Dispose();
+					break;
+				}
+
+
+			}
+
+
+		}
+	}
+	public class Handler
+	{
+		public string Name;
+		public string Key;
+		public async Task ProcessWS(AspNetWebSocketContext context)
+		{
+			WebSocket socket = context.WebSocket;
+
+			Socket_Add_UpdateUserinfo(Name, socket);
+
+			await Task.WhenAll(Task_Checkuserifalive(socket), ReadTask(socket));
+
+		}
+		private void Socket_Add_UpdateUserinfo(string UName, WebSocket ws)
+		{
+			Singleton.Socket SC = new Singleton.Socket();
+
+			string ip = System.Web.HttpContext.Current.Request.ServerVariables["HTTP_X_FORWARDED_FOR"];
+			int port = System.Convert.ToInt32(System.Web.HttpContext.Current.Request.ServerVariables["REMOTE_PORT"]);
+			if (string.IsNullOrEmpty(ip)) { ip = System.Web.HttpContext.Current.Request.ServerVariables["REMOTE_ADDR"]; }
+
+			SC.IP = ip;
+			SC.Port = port;
+			SC.ws = ws;
+			SC.UserName = UName;
+			Singleton Handler = Singleton.Instance;
+			Handler.AddSocket(SC);
+
+		}
+		// MUST read if we want the socket state to be updated
+		private async Task ReadTask(WebSocket ws)
+		{
+			Singleton Handler = Singleton.Instance;
+			Singleton.Socket SC = new Singleton.Socket();
+
+			ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
+			while (true)
+			{
+				WebSocketReceiveResult result = await ws.ReceiveAsync(buffer, CancellationToken.None).ConfigureAwait(false);
+				string userMessage = Encoding.UTF8.GetString(buffer.Array, 0, result.Count);
+				if (ws.State != WebSocketState.Open)
+				{
+					Handler.removeSocket(ws);
+					break;
+				}
+
+				BL bl = new BL();
+
+				List<Dirusme> msgList = bl.ProcMsg(userMessage);
+				foreach (Dirusme d in msgList)
+				{
+					switch (d.Direction)
+					{
+						case eDirection.Echo:
+							if (d.Message != "")
+							{
+								buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(d.Message));
+								await ws.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+							}
+				
+							break;
+						case eDirection.TargetedPing:
+							Handler.SendTargetedPing(d.Message, d.User);
+							break;
+						case eDirection.SendToAll:
+							Handler.SendToAll(d.Message);
+							break;
+						case eDirection.SendToallExceptUser:
+							Handler.SendToAllExceptUser(d.Message, d.User);
+							break;
+					}
+
+				}
+
+
+			}
+		}
+
+		private async Task Task_Checkuserifalive(WebSocket ws)
+		{
+			Singleton Handler = Singleton.Instance;
+			while (true)
+			{
+				var timeStr = DateTime.UtcNow.ToString("MMM dd yyyy HH:mm:ss.fff UTC", CultureInfo.InvariantCulture);
+				var buffer = Encoding.UTF8.GetBytes(timeStr);
+
+				if (ws.State != WebSocketState.Open)
+				{
+					Handler.removeSocket(ws);
+					break;
+				}
+
+				var sendTask = ws.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true, CancellationToken.None);
+				await sendTask.ConfigureAwait(false);
+
+				if (ws.State != WebSocketState.Open) {
+					Handler.removeSocket(ws);
+					break;
+				}
+
+				await Task.Delay(60000).ConfigureAwait(false); // Checks every 1 minute
+			}
+		}
+	}
+	public sealed class Singleton
+	{
+		static Singleton instance = null;
+		static readonly object padlock = new object();
+		static List<Socket> Sockets;
+		static bool timeronrun;
+		static long Counter;
+		static int Countdown;
+		public long Memory;
+		public class Socket
+		{
+			public int Port;
+			public string IP;
+			public DateTime d1;
+			public string UserName;
+			public bool timeronrun { get; set; }
+			public WebSocket ws;
+		}
+		private class StateObjClass
+		{
+			// Used to hold parameters for calls to TimerTask. 
+			public int SomeValue;
+			public System.Threading.Timer TimerReference;
+			public bool TimerCanceled;
+		}
+		public static Singleton Instance
+		{
+			get
+			{
+				lock (padlock)
+				{
+					if (instance == null)
+					{
+						instance = new Singleton();
+						Sockets = new List<Socket>();
+						timeronrun = false;
+						Counter = 0;
+						Countdown = 0;
+					}
+					return instance;
+				}
+			}
+		}
+
+		#region Properties
+		public void AddSocket(Socket sckt)
+		{
+			var s = Sockets.Where(m => m.ws == sckt.ws);
+			if (s.Count() == 0) Sockets.Add(sckt);
+
+		}
+		public int SocketCount(string username)
+		{
+			return Sockets.Count(a => a.UserName == username);
+		}
+		public int SocketCount()
+		{
+			return Sockets.Count();
+		}
+		public void removeSocket(WebSocket wbs)
+		{
+			Socket sc = Sockets.Where(m => m.ws == wbs).First();
+			Sockets.Remove(sc);
+
+		}
+
+
+		#endregion
+
+		public void RunTimer()
+		{
+			if (timeronrun == false)
+			{
+				timeronrun = true;
+
+				StateObjClass StateObj = new StateObjClass();
+				StateObj.TimerCanceled = false;
+				StateObj.SomeValue = 1;
+				System.Threading.TimerCallback TimerDelegate = new System.Threading.TimerCallback(TimerTask);
+				System.Threading.Timer TimerItem = new System.Threading.Timer(TimerDelegate, StateObj, 1000, 1000);
+				StateObj.TimerReference = TimerItem;
+			}
+
+		}
+		private void TimerTask(object StateObj)
+		{
+
+
+			StateObjClass State = (StateObjClass)StateObj;
+			System.Threading.Interlocked.Increment(ref State.SomeValue);
+			string data = DateTime.Now.ToLongTimeString();
+
+
+			Evaluate();
+
+			if (timeronrun == false)
+			// Dispose Requested.
+			{
+				State.TimerReference.Dispose();
+
+			}
+		}
+		private string SocketStatus(long timerCount)
+		{
+			string status = "TimerCounter" + timerCount + ": SckCount:" + Sockets.Count + " Users :";
+			try
+			{
+				foreach (Singleton.Socket sc in Sockets)
+				{
+					string data;
+					data = sc.UserName + ":" + sc.IP + ":" + sc.Port + "->";
+					status = status + data;
+				}
+			}
+			catch (Exception ex)
+			{
+				string msg = ex.Message;
+			}
+
+			return status;
+		}
+		private void Evaluate()
+		{
+			BL bl = new BL();
+			Countdown++;
+			try
+			{
+				foreach (Singleton.Socket sc in Sockets)
+				{
+					string message = DateTime.Now.ToLongTimeString();
+
+					try
+					{
+						if (sc.ws.State == WebSocketState.Open)
+						{
+							if (Countdown > 29)
+							{
+								ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
+								buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(message));
+								sc.ws.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+								Countdown = 0;
+
+							}
+
+
+						}
+						else
+						{
+							Sockets.Remove(sc);
+
+						}
+
+					}
+					catch (Exception ex)
+					{
+						string s = ex.Message;
+						if (s != "A send operation is already in progress.")
+						{
+							Sockets.Remove(sc);
+							break;
+						}
+
+					}
+
+
+				}
+
+			}
+			catch (Exception ex)
+			{
+				string message = ex.Message;
+			}
+
+		}
+		private bool SendMessage(string username, string data, int MessengerID)
+		{
+			bool MessageSent = false;
+			var sockets = Sockets.Where(m => m.UserName == username);
+			foreach (Singleton.Socket sc in sockets)
+			{
+				string message = data;
+				try
+				{
+					if (sc.ws.State == WebSocketState.Open)
+					{
+						MessageSent = true;
+						ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
+						buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(message));
+						sc.ws.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+
+					}
+
+				}
+				catch (Exception ex)
+				{
+
+				}
+
+
+			}
+			return MessageSent;
+		}
+		private bool SendBroadcast(string data, int MessengerID)
+		{
+			bool MessageSent = false;
+
+			foreach (Singleton.Socket sc in Sockets)
+			{
+				string message = data;
+				try
+				{
+					if (sc.ws.State == WebSocketState.Open)
+					{
+						MessageSent = true;
+						ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
+						buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(message));
+						sc.ws.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+
+					}
+
+				}
+				catch (Exception ex)
+				{
+
+				}
+			}
+
+
+			return MessageSent;
+		}
+		public bool SendToAll(string data)
+		{
+
+			bool MessageSent = false;
+
+			foreach (Singleton.Socket sc in Sockets)
+			{
+				string message = data;
+				try
+				{
+					if (sc.ws.State == WebSocketState.Open)
+					{
+						MessageSent = true;
+						ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
+						buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(message));
+						sc.ws.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+
+					}
+
+				}
+				catch (Exception ex)
+				{
+
+				}
+			}
+
+
+
+			return MessageSent;
+		}
+		public bool SendToAllExceptUser(string data, string User)
+		{
+
+			bool MessageSent = false;
+
+			foreach (Singleton.Socket sc in Sockets)
+			{
+				string message = data;
+				try
+				{
+					if (sc.ws.State == WebSocketState.Open)
+					{
+						if (sc.UserName != User)
+						{
+							MessageSent = true;
+							ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
+							buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(message));
+							sc.ws.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+						}
+
+
+					}
+
+				}
+				catch (Exception ex)
+				{
+
+				}
+			}
+
+
+
+			return MessageSent;
+		}
+		public bool SendTargetedPing(string data, string username)
+		{
+			bool MessageSent = false;
+			var sockets = Sockets.Where(m => m.UserName == username);
+			foreach (Singleton.Socket sc in sockets)
+			{
+				string message = data;
+				try
+				{
+					if (sc.ws.State == WebSocketState.Open)
+					{
+						MessageSent = true;
+						ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
+						buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(message));
+						sc.ws.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+					}
+
+				}
+				catch (Exception ex)
+				{
+
+				}
+
+
+			}
+			return MessageSent;
+		}
+
+	}
+	public enum eDirection
+	{
+		Echo,
+		TargetedPing,
+		SendToAll,
+		SendToallExceptUser
+	};
+	public class Dirusme
+	{
+		public eDirection Direction;
+		public string User;
+		public string Message;
+
+
+	}
+
+	public class BL
+	{
+
+		private struct Parameters
+		{
+			public string Field;
+			public string Value;
+		}
+		const char LeftParenthesis = '{';
+		const char RightParenthesis = '}';
+		bool AreParenthesesBalanced(string text)
+		{
+			bool found = false;
+			for (var i = 1; i < text.Length - 1; i++)
+			{
+				if (text[i] == '}')
+					return false;
+
+				if (text[i] == '{')
+				{
+					found = true;
+					break;
+				}
+
+			}
+			if (found == false) return false;
+			found = false;
+			for (var i = text.Length - 1; i > 0; i--)
+			{
+				if (text[i] == '{')
+					return false;
+
+				if (text[i] == '}')
+				{
+					found = true;
+					break;
+				}
+			}
+			if (found == false) return false;
+			return true;
+		}
+
+		public List<Dirusme> ProcMsg(string data)
+		{
+			string message = "";
+			List<Dirusme> dirusme = new List<Dirusme>();
+			try
+			{
+				Debug.Print(data);
+
+				string mdata = data + ":::";
+				string[] rcvData = mdata.Split(new char[] { ':' }, StringSplitOptions.None);
+				if (rcvData.Length > 3)
+				{
+
+					dirusme.Add(Dmass(eDirection.Echo, "", message));
+					dirusme.Add(Dmass(eDirection.SendToallExceptUser, "", message));
+					dirusme.Add(Dmass(eDirection.TargetedPing, "", message));
+					dirusme.Add(Dmass(eDirection.SendToAll, "", message));
+
+				}
+
+			}
+			catch (Exception ex)
+			{
+				message = "Error," + ex.Message;
+				dirusme.Add(Dmass(eDirection.Echo, "", message));
+
+			}
+
+
+			return dirusme;
+		}
+
+		private Dirusme Dmass(eDirection direction, string user, string message)
+		{
+			Dirusme di = new Dirusme();
+			di.Direction = direction;
+			di.User = user;
+			di.Message = message;
+
+			return di;
+		}
+
+	}
+
+	#endregion
+
+}
+

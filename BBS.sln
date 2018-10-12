@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27130.2026
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BBS", "BBS.csproj", "{6A13D673-A6A5-4E02-A1AD-F7968B8613BA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jsontocsharp", "..\jsontocsharp\jsontocsharp.csproj", "{87024E4F-62DD-41CF-BE1F-0B31F578AEB4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6A13D673-A6A5-4E02-A1AD-F7968B8613BA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6A13D673-A6A5-4E02-A1AD-F7968B8613BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6A13D673-A6A5-4E02-A1AD-F7968B8613BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6A13D673-A6A5-4E02-A1AD-F7968B8613BA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{87024E4F-62DD-41CF-BE1F-0B31F578AEB4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{87024E4F-62DD-41CF-BE1F-0B31F578AEB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{87024E4F-62DD-41CF-BE1F-0B31F578AEB4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{87024E4F-62DD-41CF-BE1F-0B31F578AEB4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C5730E38-A8C5-48CE-AE38-E217B32AB889}
+	EndGlobalSection
+EndGlobal

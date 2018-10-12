@@ -1,0 +1,26 @@
+﻿@{
+    ViewBag.Title = "Index";
+}
+
+<div id="msgsws"></div>
+<h2>WS Monitoring</h2>
+
+<div class="container">
+    <h2>Basic Table</h2>
+    <p>The .table class adds basic styling (light padding and only horizontal dividers) to a table:</p>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Data</th>
+            </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+    </table>
+</div>
+
+
+<script id="tmptbody" type="text/x-jQuery-tmpl">
+    <tr>
+        <td>${Data}</td>
+    </tr>
+</script>
